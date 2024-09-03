@@ -113,6 +113,7 @@ void Euclidean<channels, input_width, T>::forward(T (&input)[channels][input_wid
         for (int j = 0; j < input_width; j++)
         {
             output[i] = (input[i][j] - this->weights[i][j]) * (input[i][j] - this->weights[i][j]);
+            // output[i] += (input[i][j] - this->weights[i][j]) * (input[i][j] - this->weights[i][j]);
         }
 
         // Sqrt
