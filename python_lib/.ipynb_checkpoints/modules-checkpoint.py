@@ -76,16 +76,6 @@ class TDNNBlock(nn.Module):
     >>> out_tensor = layer(inp_tensor).transpose(1, 2)
     >>> out_tensor.shape
     torch.Size([8, 120, 64])
-    self.blocks.append(
-            TDNNBlock(
-                input_size,
-                channels[0],
-                kernel_sizes[0],
-                dilations[0],
-                activation,
-                groups[0],
-            )
-        )
     """
 
     def __init__(
@@ -316,8 +306,6 @@ class AttentiveStatisticsPooling(nn.Module):
             # https://github.com/pytorch/pytorch/issues/4320
             total = mask.sum(dim=2, keepdim=True).float()
             mean, std = _compute_statistics(x, mask / total)
-            print(mean)
-            print(std)
             mean = mean.unsqueeze(2).repeat(1, 1, L)
             std = std.unsqueeze(2).repeat(1, 1, L)
             attn = torch.cat([x, mean, std], dim=1)  # Append on the channel
@@ -487,7 +475,6 @@ class ECAPA_TDNN(torch.nn.Module):
         input_size,
         device="cpu",
         lin_neurons=192,
-        out_neurons=10,
         activation=torch.nn.ReLU,
         channels=[512, 512, 512, 512, 1536],
         kernel_sizes=[5, 3, 3, 3, 1],
@@ -497,7 +484,6 @@ class ECAPA_TDNN(torch.nn.Module):
         se_channels=128,
         global_context=True,
         groups=[1, 1, 1, 1, 1],
-        metrics_type="cosine",  # consine, cdist, euclidean
     ):
         super().__init__()
         assert len(channels) == len(kernel_sizes)
@@ -550,25 +536,18 @@ class ECAPA_TDNN(torch.nn.Module):
         )
         self.asp_bn = BatchNorm1d(input_size=channels[-1] * 2)
 
-        # Final linear transformation
-        self.fc = Conv1d(
-            in_channels=channels[-1] * 2,
-            out_channels=lin_neurons,
-            kernel_size=1,
-        )
-
-        self.probabilities = Classifier(
-            input_size=lin_neurons,
-            out_neurons=out_neurons,
-            device=device,
-            metrics_type=metrics_type,
-        )
+        # # Final linear transformation
+        # self.fc = Conv1d(
+        #     in_channels=channels[-1] * 2,
+        #     out_channels=lin_neurons,
+        #     kernel_size=1,
+        # )
 
         # Final Dense Layer
-        # self.final = nn.Sequential(
-        #     nn.Flatten(),
-        #     nn.Linear(in_features=channels[-1] * 2, out_features=lin_neurons),
-        # )
+        self.final = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_features=channels[-1] * 2, out_features=lin_neurons),
+        )
 
     def forward(self, x, lengths=None):
         """Returns the embedding vector.
@@ -594,7 +573,6 @@ class ECAPA_TDNN(torch.nn.Module):
                 x = layer(x, lengths=lengths)
             except TypeError:
                 x = layer(x)
-            print(x)
             xl.append(x)
 
         # Multi-layer feature aggregation
@@ -606,13 +584,11 @@ class ECAPA_TDNN(torch.nn.Module):
         x = self.asp_bn(x)
 
         # Final linear transformation
-        x = self.fc(x)
-        # x = self.final(x)
+        # x = self.fc(x)
+        x = self.final(x)
 
         # x = x.transpose(1, 2)
-        x = self.probabilities(x)
-
-        x = F.softmax(x, dim=2)
+        x = F.softmax(x, dim=1)
         return x
 
     def return_layers(self):
@@ -623,9 +599,7 @@ class ECAPA_TDNN(torch.nn.Module):
         lst += self.mfa.return_layers()
         lst += self.asp.return_layers()
         lst += self.asp_bn.return_layers()
-        # lst += [self.final[1]]
-        lst += self.fc.return_layers()
-        lst += self.probabilities.return_layers()
+        lst += [self.final[1]]
         return lst
 
 
@@ -638,8 +612,23 @@ class Classifier(torch.nn.Module):
         Expected size of input dimension.
     device : str
         Device used, e.g., "cpu" or "cuda".
+    lin_blocks : int
+        Number of linear layers.
+    lin_neurons : int
+        Number of neurons in linear layers.
     out_neurons : int
         Number of classes.
+
+    Example
+    -------
+    >>> classify = Classifier(input_size=2, lin_neurons=2, out_neurons=2)
+    >>> outputs = torch.tensor([ [1., -1.], [-9., 1.], [0.9, 0.1], [0.1, 0.9] ])
+    >>> outputs = outputs.unsqueeze(1)
+    >>> cos = classify(outputs)
+    >>> (cos < -1.0).long().sum()
+    tensor(0)
+    >>> (cos > 1.0).long().sum()
+    tensor(0)
     """
 
     def __init__(
@@ -647,15 +636,14 @@ class Classifier(torch.nn.Module):
         input_size,
         device="cpu",
         out_neurons=1211,
-        metrics_type="cosine",  # cosine, cdist, euclidean
     ):
         super().__init__()
+        self.blocks = nn.ModuleList()
 
-        assert metrics_type in ["cosine", "cdist", "euclidean"]
-
-        self.metrics_type = metrics_type
-
-        self.weight = nn.Parameter(torch.randn((input_size, out_neurons)).to(device))
+        # Final Layer
+        self.weight = nn.Parameter(
+            torch.FloatTensor(out_neurons, input_size, device=device)
+        )
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
@@ -671,16 +659,9 @@ class Classifier(torch.nn.Module):
         out : torch.Tensor
             Output probabilities over speakers.
         """
+        for layer in self.blocks:
+            x = layer(x)
 
-        if self.metrics_type == "cosine":
-            x = F.linear(F.normalize(x), F.normalize(self.weight))
-            return x
-        elif self.metrics_type == "cdist":
-            x = torch.cdist(x, self.weight)
-            return x
-        elif self.metrics_type == "euclidean":
-            x = (x - self.weight).pow(2).sum(-1).sqrt()
-            return x.unsqueeze(-1)
-
-    def return_layers(self) -> list:
-        return [self]
+        # Need to be normalized
+        x = F.linear(F.normalize(x.squeeze(1)), F.normalize(self.weight))
+        return x.unsqueeze(1)

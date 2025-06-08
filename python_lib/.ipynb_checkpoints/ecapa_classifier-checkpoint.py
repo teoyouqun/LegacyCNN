@@ -76,16 +76,6 @@ class TDNNBlock(nn.Module):
     >>> out_tensor = layer(inp_tensor).transpose(1, 2)
     >>> out_tensor.shape
     torch.Size([8, 120, 64])
-    self.blocks.append(
-            TDNNBlock(
-                input_size,
-                channels[0],
-                kernel_sizes[0],
-                dilations[0],
-                activation,
-                groups[0],
-            )
-        )
     """
 
     def __init__(
