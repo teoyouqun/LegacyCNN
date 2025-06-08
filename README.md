@@ -130,3 +130,6 @@ Note: **lengths** is also tested in `ecapa_clasifier`.
 g++ -O2 *.cpp layers/*.h models/*.h utils/*.h tests/*.h -o test
 test
 ```
+
+### Dataset Reference
+[RadChar Dataset](https://github.com/abcxyzi/RadChar)
