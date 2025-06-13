@@ -76,6 +76,16 @@ class TDNNBlock(nn.Module):
     >>> out_tensor = layer(inp_tensor).transpose(1, 2)
     >>> out_tensor.shape
     torch.Size([8, 120, 64])
+    self.blocks.append(
+            TDNNBlock(
+                input_size,
+                channels[0],
+                kernel_sizes[0],
+                dilations[0],
+                activation,
+                groups[0],
+            )
+        )
     """
 
     def __init__(
@@ -306,8 +316,8 @@ class AttentiveStatisticsPooling(nn.Module):
             # https://github.com/pytorch/pytorch/issues/4320
             total = mask.sum(dim=2, keepdim=True).float()
             mean, std = _compute_statistics(x, mask / total)
-            print(mean)
-            print(std)
+            # print(mean)
+            # print(std)
             mean = mean.unsqueeze(2).repeat(1, 1, L)
             std = std.unsqueeze(2).repeat(1, 1, L)
             attn = torch.cat([x, mean, std], dim=1)  # Append on the channel
@@ -547,12 +557,15 @@ class ECAPA_TDNN(torch.nn.Module):
             kernel_size=1,
         )
 
-        self.probabilities = Classifier(
-            input_size=lin_neurons,
-            out_neurons=out_neurons,
-            device=device,
-            metrics_type=metrics_type,
-        )
+        if metrics_type in ["cosine", "cdist", "euclidean"]:
+            self.probabilities = Classifier(
+                input_size=lin_neurons,
+                out_neurons=out_neurons,
+                device=device,
+                metrics_type=metrics_type,
+            )
+        elif metrics_type == "AAM":
+            self.probabilities = nn.Identity()
 
         # Final Dense Layer
         # self.final = nn.Sequential(
@@ -584,7 +597,7 @@ class ECAPA_TDNN(torch.nn.Module):
                 x = layer(x, lengths=lengths)
             except TypeError:
                 x = layer(x)
-            print(x)
+            # print(x)
             xl.append(x)
 
         # Multi-layer feature aggregation
@@ -594,15 +607,18 @@ class ECAPA_TDNN(torch.nn.Module):
         # Attentive Statistical Pooling
         x = self.asp(x, lengths=lengths)
         x = self.asp_bn(x)
+        # print(f"After ASP_BN: {x.shape}")
 
         # Final linear transformation
         x = self.fc(x)
+        # print(f"After FC: {x.shape}")
         # x = self.final(x)
 
+        x = x.view(x.shape[0], -1)
         # x = x.transpose(1, 2)
         x = self.probabilities(x)
 
-        x = F.softmax(x, dim=2)
+        # x = F.softmax(x, dim=2)
         return x
 
     def return_layers(self):
@@ -645,7 +661,8 @@ class Classifier(torch.nn.Module):
 
         self.metrics_type = metrics_type
 
-        self.weight = nn.Parameter(torch.randn((input_size, out_neurons)).to(device))
+        # self.weight = nn.Parameter(torch.randn((input_size, out_neurons)).to(device))
+        self.weight = nn.Parameter(torch.randn((out_neurons, input_size)).to(device))
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
@@ -663,6 +680,7 @@ class Classifier(torch.nn.Module):
         """
 
         if self.metrics_type == "cosine":
+            # print(f"Classifier: x.shape = {x.shape}, weight.shape = {self.weight.shape}")
             x = F.linear(F.normalize(x), F.normalize(self.weight))
             return x
         elif self.metrics_type == "cdist":

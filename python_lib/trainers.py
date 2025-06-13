@@ -6,6 +6,8 @@ import copy
 import os
 from torch.autograd import Variable
 import numpy as np
+from tqdm import tqdm
+from .AAMSoftmax import AAMSoftmax
 
 
 class BaseTrainer:
@@ -31,23 +33,39 @@ class BaseTrainer:
 
         optimiser = self.optimiser
 
+        if isinstance(loss_function, torch.nn.CrossEntropyLoss):
+            myClassifier = AAMSoftmax(in_feats = 192, n_classes = 5)
+
         for epoch in range(num_epochs):
             loss_history = []
-            print(f"Epoch: {epoch}/{num_epochs-1}")
+            # print(f"Epoch: {epoch}/{num_epochs-1}")
             print("-----------------------------")
+            progress_bar = tqdm(train_loader, desc=F"Epoch {epoch+1}/{num_epochs}")
+            
             start = time.perf_counter()
             for batch_id, (data, label) in enumerate(train_loader):
                 data = Variable(data.to(device))
-                target = Variable(label.to(device))
+                # target = Variable(label.to(device))
+                # Changed for RadChar
+                label_class = label[:,1]
+                target = Variable(label_class.to(device))
 
                 optimiser.zero_grad()
-                preds = model(data)
+                intermediate_preds = model(data)
+                if isinstance(loss_function, torch.nn.CrossEntropyLoss):
+                    preds = myClassifier(intermediate_preds, target)
+                else:
+                    preds = intermediate_preds
+                # print(f"Data: {data.shape}, Target: {target.shape}")
                 # print("preds: ",preds)
                 # print("target: ", target)
                 loss = loss_function(preds, target)
                 loss.backward()
                 loss_history.append(loss.data.item())
                 optimiser.step()
+                progress_bar.set_postfix(batch=batch_id +1, loss = loss.data.item())
+                #if (batch_id + 1) % 50 == 0:
+                    #tqdm.write(f"Batch {batch_id+1}/{len(train_loader)} -- Loss: {loss.data.item():.4f}")
 
             print(f"Loss avg: {sum(loss_history)/len(loss_history)}")
 
