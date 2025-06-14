@@ -8,7 +8,7 @@ class AAMSoftmax(nn.Module):
         super().__init__()
         self.margin = margin
         self.scale = scale
-        self.weight = nn.Parameter(torch.FloatTensor(n_classes, in_feats))
+        self.weight = nn.Parameter(torch.FloatTensor(n_classes, in_feats)).to(device)
         self.device = device
         nn.init.xavier_uniform_(self.weight)
 
@@ -17,7 +17,31 @@ class AAMSoftmax(nn.Module):
         self.th = math.cos(math.pi - margin)
         self.mm = math.sin(math.pi - margin) * margin
 
-    def forward(self, embeddings, labels):
+    
+
+    def forward(self, embeddings, labels=None):
+        # Normalize features and weights
+        cosine = F.linear(F.normalize(embeddings), F.normalize(self.weight))  # [B, C]
+
+        if self.training and labels is not None:
+            sine = torch.sqrt(1.0 - cosine.pow(2)).clamp(min=1e-7)
+            phi = cosine * self.cos_m - sine * self.sin_m  # apply margin
+
+            # Convert labels to one-hot
+            one_hot = torch.zeros_like(cosine)
+            one_hot.scatter_(1, labels.view(-1, 1), 1.0)
+
+            # Apply margin only to the ground truth class
+            output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+        else:
+            # In inference mode, do not apply margin
+            output = cosine
+
+        # Scale logits
+        output *= self.scale
+        return output
+        
+    def forward_v0(self, embeddings, labels):
         # Normalize features and weights
         embeddings = F.normalize(embeddings.to(self.device), p=2, dim=1)
         weight = F.normalize(self.weight.to(self.device), p=2, dim=1)

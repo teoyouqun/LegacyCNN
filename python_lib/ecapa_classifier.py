@@ -14,6 +14,7 @@ from speechbrain.nnet.linear import Linear
 from speechbrain.nnet.normalization import BatchNorm1d as _BatchNorm1d
 
 from .saveasfile import SaveAsBin
+from .AAMSoftmax import AAMSoftmax
 
 
 # Skip transpose as much as possible for efficiency
@@ -565,7 +566,7 @@ class ECAPA_TDNN(torch.nn.Module):
                 metrics_type=metrics_type,
             )
         elif metrics_type == "AAM":
-            self.probabilities = nn.Identity()
+            self.probabilities = AAMSoftmax(in_feats = 192, n_classes = 5, device = device)
 
         # Final Dense Layer
         # self.final = nn.Sequential(
@@ -618,7 +619,7 @@ class ECAPA_TDNN(torch.nn.Module):
         # x = x.transpose(1, 2)
         x = self.probabilities(x)
 
-        # x = F.softmax(x, dim=2)
+        x = F.log_softmax(x, dim=1)
         return x
 
     def return_layers(self):

@@ -133,3 +133,19 @@ test
 
 ### Dataset Reference
 [RadChar Dataset](https://github.com/abcxyzi/RadChar)
+
+### Python Environment
+- To Load:
+    - Download Python (currently using 3.10.12)
+    - Change to desired directory (do not put it into Git Repo)
+    - Run the following commands:
+        `python -m venv ecapa_venv`
+        `source ecapa_venv/bin/activate`
+    - Change directory back into LegacyCNN
+        `pip install -r PyEnv\requirements.txt`
+    - Should there be any conflicts in version, you can change the package version in the requirements.txt. This may result in other packages to break, so ideally get the same Python version (but other versions should work ok too)
+
+- To update the requirements.txt if needed:
+    - Change the requirements.txt into a later version
+    - Run the following command:
+        `pip freeze > PyEnv/requirements.txt`

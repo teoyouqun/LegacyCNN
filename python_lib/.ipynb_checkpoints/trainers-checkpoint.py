@@ -33,9 +33,6 @@ class BaseTrainer:
 
         optimiser = self.optimiser
 
-        if isinstance(loss_function, torch.nn.CrossEntropyLoss):
-            myClassifier = AAMSoftmax(in_feats = 192, n_classes = 5)
-
         for epoch in range(num_epochs):
             loss_history = []
             # print(f"Epoch: {epoch}/{num_epochs-1}")
@@ -51,21 +48,15 @@ class BaseTrainer:
                 target = Variable(label_class.to(device))
 
                 optimiser.zero_grad()
-                intermediate_preds = model(data)
-                if isinstance(loss_function, torch.nn.CrossEntropyLoss):
-                    preds = myClassifier(intermediate_preds, target)
-                else:
-                    preds = intermediate_preds
-                # print(f"Data: {data.shape}, Target: {target.shape}")
-                # print("preds: ",preds)
-                # print("target: ", target)
+                preds = model(data)
+                
                 loss = loss_function(preds, target)
                 loss.backward()
                 loss_history.append(loss.data.item())
                 optimiser.step()
                 progress_bar.set_postfix(batch=batch_id +1, loss = loss.data.item())
                 #if (batch_id + 1) % 50 == 0:
-                    #tqdm.write(f"Batch {batch_id+1}/{len(train_loader)} -- Loss: {loss.data.item():.4f}")
+                    # tqdm.write(f"Batch {batch_id+1}/{len(train_loader)} -- Loss: {loss.data.item():.4f}")
 
             print(f"Loss avg: {sum(loss_history)/len(loss_history)}")
 
@@ -89,23 +80,26 @@ class BaseTrainer:
         test_loss = 0
         correct = 0
 
-        start = time.perf_counter()
-        for batch_id, (data, label) in enumerate(test_loader):
-            # print("Batch_id: ", batch_id)
-            data = data.to(device)
-            target = label.to(device)
-
-            # print(data.shape)
-            output = model(data)
-            test_loss += loss_function(output, target).data.item()
-            pred = output.data.max(1)[1]
-            correct += pred.eq(target.data).cpu().sum()
-            # print(type(pred), type(target))
-            pred_ = pred.cpu().numpy()
-            target_ = target.cpu().numpy()
-            
-            for i in range(pred_.shape[0]):
-                confusion_matrix[pred_[i], target_[i]] += 1
+        with torch.no_grad():
+            start = time.perf_counter()
+            for batch_id, (data, label) in enumerate(test_loader):
+                progress_bar = tqdm(test_loader, desc=F"Batch No. {batch_id+1}/{(len(test_loader))}")
+                # print("Batch_id: ", batch_id)
+                data = data.to(device)
+                label_class = label[:,1]
+                target = label_class.to(device)
+    
+                # print(data.shape)
+                output = model(data)
+                test_loss += loss_function(output, target).data.item()
+                pred = output.data.max(1)[1]
+                correct += pred.eq(target.data).cpu().sum()
+                # print(type(pred), type(target))
+                pred_ = pred.cpu().numpy()
+                target_ = target.cpu().numpy()
+                
+                for i in range(pred_.shape[0]):
+                    confusion_matrix[pred_[i], target_[i]] += 1
 
         test_loss = test_loss
         test_loss /= len(test_loader)  # loss function already averages over batch size
