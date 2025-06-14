@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+# VSCode
+.vscode/
+
+# Python: PyCache, venvs, ipynb
+__pycache__/
+.ipynb_checkpoints/
+venv/
+env/
